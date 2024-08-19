@@ -32,7 +32,7 @@ export class MarkdownConverter {
     }
   }
 
-  private async convertMarkdownToPdf(inputFile, outputFile) {
+  private async convertMarkdownToPdf(inputFile: string, outputFile: string) {
     try {
       const markdownContent = await fs.readFile(inputFile, 'utf-8');
       const styledHtmlContent = this.getStyledHtmlContent(markdownContent);
@@ -44,10 +44,8 @@ export class MarkdownConverter {
         '/assets',
         express.static(path.join(__dirname, '..', 'docs', 'assets')),
       );
-      app.use(
-        '/styles',
-        express.static(path.join(__dirname, '..', 'docs', 'styles')),
-      );
+      app.use('/styles', express.static(path.join(__dirname, '..', 'styles')));
+
       app.get('/', (req, res) => res.sendFile(tempHtmlFile));
 
       const server = app.listen(0);
@@ -58,16 +56,16 @@ export class MarkdownConverter {
       await page.goto(`http://localhost:${port}`, {
         waitUntil: 'networkidle0',
       });
+
       await page.pdf({
         path: outputFile,
         format: 'A4',
-        printBackground: true, // Ensure backgrounds are printed
-
+        printBackground: true,
         margin: {
-          top: '10mm', // default is 0, units: mm, cm, in, px
-          right: '5mm', // default is 0, units: mm, cm, in, px
-          bottom: '10mm', // default is 0, units: mm, cm, in, px
-          left: '5mm', // default is 0, units: mm, cm, in, px
+          top: '10mm',
+          right: '5mm',
+          bottom: '10mm',
+          left: '5mm',
         },
       });
 
@@ -104,19 +102,25 @@ export class MarkdownConverter {
 
   private sortFiles(files: string[], fileType: 'md' | 'pdf'): string[] {
     return files.sort((a, b) => {
-      const chapterRegex = new RegExp(`(\\d+)(\\.\\d+)?-[^/]*\\.${fileType}$`);
+      const extractNumbers = (filename: string): number[] => {
+        const baseName = path.basename(filename, `.${fileType}`);
+        const numberParts = baseName
+          .split(/[-.]/)
+          .filter((part) => /^\d+$/.test(part));
+        return numberParts.map((num) => parseInt(num, 10));
+      };
 
-      const matchA = a.match(chapterRegex);
-      const matchB = b.match(chapterRegex);
-      const chapterA = parseInt(matchA ? matchA[1] : '0');
-      const chapterB = parseInt(matchB ? matchB[1] : '0');
-      const subChapterA = parseFloat(matchA ? matchA[2] || '.0' : '.0');
-      const subChapterB = parseFloat(matchB ? matchB[2] || '.0' : '.0');
+      const aNumbers = extractNumbers(a);
+      const bNumbers = extractNumbers(b);
 
-      // First compare chapters, then sub-chapters if chapters are equal
-      return chapterA !== chapterB
-        ? chapterA - chapterB
-        : subChapterA - subChapterB;
+      for (let i = 0; i < Math.max(aNumbers.length, bNumbers.length); i++) {
+        if ((aNumbers[i] || 0) !== (bNumbers[i] || 0)) {
+          return (aNumbers[i] || 0) - (bNumbers[i] || 0);
+        }
+      }
+
+      // If all number parts are equal, compare the whole strings to maintain stability
+      return a.localeCompare(b);
     });
   }
 
@@ -147,12 +151,12 @@ export class MarkdownConverter {
     <!-- Include only the dark theme CSS for Highlight.js -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/dark.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="
+https://cdn.jsdelivr.net/npm/highlightjs-solidity@2.0.6/dist/solidity.min.js
+"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', (event) => {
-            document.querySelectorAll('pre code').forEach((el) => {
-                hljs.highlightElement(el);
-            });
-        });
+    hljs.highlightAll();
+
     </script>
 
     <!-- Additional styles and fonts -->
@@ -174,13 +178,19 @@ export class MarkdownConverter {
     const regex = /```(\w+)?\n([\s\S]*?)```/g;
 
     return markdownText.replace(regex, (match, lang, code) => {
-      const validLang = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
-      const highlightedCode = hljs.highlight(code, {
-        language: validLang,
-      }).value;
+      let highlightedCode;
+      if (lang && hljs.getLanguage(lang)) {
+        highlightedCode = hljs.highlight(code, {
+          language: lang,
+        }).value;
+      } else {
+        // Use auto mode when language is not found
+        highlightedCode = hljs.highlightAuto(code).value;
+        lang = 'auto';
+      }
 
       // Return the highlighted code wrapped in appropriate tags to prevent escaping
-      return `\`\`\`${validLang}\n${highlightedCode}\`\`\``;
+      return `\`\`\`${lang}\n${highlightedCode}\`\`\``;
     });
   }
 }
